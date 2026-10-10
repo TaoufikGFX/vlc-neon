@@ -8,7 +8,7 @@ First public release of VLC Neon, built on VLC 4.0.0-dev (upstream commit `e77e4
 - Neon identity: new neon cone icon, Inter typography with tabular figures, own app ID (`org.VideoLAN.VLCNeon`), command (`vlc-neon`) and settings folders, so it runs next to regular VLC.
 - Seek-bar thumbnail previews with timestamp (asynchronous, cached, also in fullscreen).
 - Picture-in-Picture in a separate, always-on-top window (Wayland) with its own seek bar, ±3 s / ±10 s, play/pause and mute; optional KWin script for placement on KDE Plasma.
-- Speed presets (0.5×–2×), plus native fine adjustment from 0.25× to 4×.
+- Speed presets from 0.25× to 4× in one menu (Normal in the middle), plus native fine adjustment.
 - Repeat menu: Off, 1–5 extra plays, or Unlimited, with a badge on the toolbar button; remembered between sessions.
 - Volume boost presets up to 300 % with a peak limiter.
 - Resume prompt for local files and a history of the last 100 files; per-file speed, volume, audio/subtitle tracks and delays.
