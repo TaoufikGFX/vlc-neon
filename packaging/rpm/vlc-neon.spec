@@ -9,7 +9,7 @@
 %global debug_package %{nil}
 
 Name:           vlc-neon
-Version:        1.0.0
+Version:        1.0.1
 Release:        1%{?dist}
 Summary:        VLC media player with seek previews, Picture-in-Picture and extra controls
 License:        GPL-2.0-or-later AND LGPL-2.1-or-later AND OFL-1.1
@@ -64,21 +64,44 @@ cp -a %{_builddir}/neon-stage/. %{buildroot}/
 # Headers, pkg-config and static bits are not needed to run the player
 rm -rf %{buildroot}%{neon_prefix}/include %{buildroot}%{neon_prefix}/lib64/pkgconfig
 find %{buildroot}%{neon_prefix} -name '*.a' -delete
+# The plugin cache records each plugin's size and mtime, and rpmbuild strips the
+# plugins after %%install, so a cache made here would be stale: it is generated
+# on the installed files in %%posttrans instead (%%ghost: owned, removed on erase)
+rm -f %{buildroot}%{neon_prefix}/lib64/vlc/plugins/plugins.dat
+touch %{buildroot}%{neon_prefix}/lib64/vlc/plugins/plugins.dat
 
 %check
 desktop-file-validate %{buildroot}%{_datadir}/applications/org.VideoLAN.VLCNeon.desktop
 appstream-util validate-relax --nonet %{buildroot}%{_metainfodir}/org.VideoLAN.VLCNeon.metainfo.xml
+
+%posttrans
+LD_LIBRARY_PATH=%{neon_prefix}/lib64:%{neon_prefix}/lib64/vlc \
+    %{neon_prefix}/libexec/vlc/vlc-cache-gen %{neon_prefix}/lib64/vlc/plugins >/dev/null 2>&1 || :
+
+%preun
+if [ $1 -eq 0 ]; then
+    rm -f %{neon_prefix}/lib64/vlc/plugins/plugins.dat
+fi
+
+%postun
+if [ $1 -eq 0 ]; then
+    rm -f %{neon_prefix}/lib64/vlc/plugins/plugins.dat
+fi
 
 %files
 %license COPYING COPYING.LIB
 %doc README.md CHANGELOG.md
 %{_bindir}/vlc-neon
 %{neon_prefix}
+%ghost %{neon_prefix}/lib64/vlc/plugins/plugins.dat
 %{_datadir}/applications/org.VideoLAN.VLCNeon.desktop
 %{_metainfodir}/org.VideoLAN.VLCNeon.metainfo.xml
 %{_datadir}/icons/hicolor/*/apps/vlc-neon.*
 %{_datadir}/kwin/scripts/vlc-neon-pip
 
 %changelog
+* Sat Oct 10 2026 Taoufik Mouadab <27153304+TaoufikGFX@users.noreply.github.com> - 1.0.1-1
+- Generate the plugin cache at install time (fixes the stale plugins cache warning)
+
 * Sat Oct 10 2026 Taoufik Mouadab <27153304+TaoufikGFX@users.noreply.github.com> - 1.0.0-1
 - First public release, based on VLC 4.0.0-dev (upstream commit e77e49b5)

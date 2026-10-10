@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.0.1 — 2026-10-10
+
+### Fixed
+- Fixed stale plugin cache warning (faster startup).
+
 ## v1.0.0 — 2026-10-10
 
 First public release of VLC Neon, built on VLC 4.0.0-dev (upstream commit `e77e49b5`).

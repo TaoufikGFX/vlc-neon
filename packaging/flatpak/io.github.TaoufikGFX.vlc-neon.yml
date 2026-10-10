@@ -135,7 +135,6 @@ modules:
       - -Davahi=disabled
       - -Dupnp=disabled
     post-install:
-      - LD_LIBRARY_PATH=/app/lib64:/app/lib64/vlc /app/libexec/vlc/vlc-cache-gen /app/lib64/vlc/plugins
       - rm -rf /app/lib64/pkgconfig /app/include
     sources:
       - type: git
@@ -176,3 +175,13 @@ modules:
         path: ../../assets/icons/png
       - type: dir
         path: ../kde
+
+  # Plugin cache, generated last: the cache records each plugin's size and mtime,
+  # flatpak-builder strips the plugins after their module, and OSTree stores every
+  # file with mtime 0. Pin the mtimes to 0 first so the cache matches the installed app.
+  - name: vlc-plugin-cache
+    buildsystem: simple
+    build-commands:
+      - find /app/lib64/vlc/plugins -name '*.so' -exec touch -h -d @0 {} +
+      - rm -f /app/lib64/vlc/plugins/plugins.dat
+      - LD_LIBRARY_PATH=/app/lib64:/app/lib64/vlc /app/libexec/vlc/vlc-cache-gen /app/lib64/vlc/plugins

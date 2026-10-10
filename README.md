@@ -79,7 +79,7 @@ sha256sum -c SHA256SUMS --ignore-missing
 Built for **Fedora 44** (x86_64). Installs into `/opt/vlc-neon` and does not touch Fedora's `vlc` package.
 
 ```bash
-sudo dnf install ./vlc-neon-1.0.0-1.fc44.x86_64.rpm
+sudo dnf install ./vlc-neon-1.0.1-1.fc44.x86_64.rpm
 ```
 
 Remove with `sudo dnf remove vlc-neon`. For H.264/HEVC playback, Fedora's `openh264` or RPM Fusion's full FFmpeg (`ffmpeg-libs`) is recommended, as with any player using the system FFmpeg.
@@ -89,8 +89,8 @@ Remove with `sudo dnf remove vlc-neon`. For H.264/HEVC playback, Fedora's `openh
 Runs on x86_64 distributions with glibc 2.39 or newer (Ubuntu 24.04+, Debian 13+, Fedora 40+, …). Qt 6.11 and the libraries VLC needs are bundled.
 
 ```bash
-chmod +x vlc-neon-1.0.0-x86_64.AppImage
-./vlc-neon-1.0.0-x86_64.AppImage
+chmod +x vlc-neon-1.0.1-x86_64.AppImage
+./vlc-neon-1.0.1-x86_64.AppImage
 ```
 
 If it does not start, install FUSE 2 (`libfuse2t64` on Ubuntu, `fuse-libs` on Fedora) or run it with `--appimage-extract-and-run`.
@@ -100,7 +100,7 @@ If it does not start, install FUSE 2 (`libfuse2t64` on Ubuntu, `fuse-libs` on Fe
 Uses the KDE 6.11 runtime from Flathub (installed automatically if you have the Flathub remote).
 
 ```bash
-flatpak install --user ./vlc-neon-1.0.0.flatpak
+flatpak install --user ./vlc-neon-1.0.1.flatpak
 flatpak run io.github.TaoufikGFX.vlc-neon
 ```
 
@@ -133,7 +133,7 @@ cd vlc-neon
 
 | Package | How |
 |---|---|
-| RPM | `scripts/make-source-tarball.sh` then `rpmbuild -ta dist/vlc-neon-1.0.0-source.tar.gz` (or use [`packaging/rpm/Containerfile`](packaging/rpm/Containerfile)) |
+| RPM | `scripts/make-source-tarball.sh` then `rpmbuild -ta dist/vlc-neon-1.0.1-source.tar.gz` (or use [`packaging/rpm/Containerfile`](packaging/rpm/Containerfile)) |
 | AppImage | `podman build -t vlc-neon-appimage packaging/appimage` then `podman run --rm -v "$PWD:/src:Z" -w /src vlc-neon-appimage packaging/appimage/build-appimage.sh` |
 | Flatpak | `flatpak-builder --user --repo=repo build packaging/flatpak/io.github.TaoufikGFX.vlc-neon.yml` then `flatpak build-bundle repo vlc-neon.flatpak io.github.TaoufikGFX.vlc-neon` |
 
