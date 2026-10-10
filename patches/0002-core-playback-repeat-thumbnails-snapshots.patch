@@ -1,0 +1,424 @@
+From: Taoufik Mouadab <27153304+TaoufikGFX@users.noreply.github.com>
+Subject: [PATCH 0002] Core: unlimited repeat, accurate seek previews, hardware snapshots, hotkeys
+
+- vlc_player_SetRepeatCount(): UINT_MAX means unlimited, applies to the running input
+- Thumbnailer: honour decoder preroll, media-relative PTS, lower priority, 2 threads
+- Snapshots from hardware-decoded video (copy-back to CPU), SHM blending fix
+- Wayland: a window provider can own the surface viewport
+- Hotkeys: Left/Right 5 s, Shift 10 s, Ctrl 60 s (DVD navigation on Alt+arrows)
+
+Applies on top of VLC upstream commit e77e49b5dff7484dbf70cd1540a6a568e1890280.
+SPDX-License-Identifier: GPL-2.0-or-later
+---
+ include/vlc_player.h            |  3 ++-
+ include/vlc_window.h            |  3 +++
+ src/input/decoder.c             | 28 +++++++++++++++++++++++++++-
+ src/input/es_out.c              | 16 +++++++++++++++-
+ src/input/input.c               | 23 ++++++++++++++++++++++-
+ src/libvlc-module.c             | 14 +++++++-------
+ src/player/input.c              |  3 ++-
+ src/player/player.c             |  2 ++
+ src/preparser/internal.c        | 16 ++++++++++++++++
+ src/video_output/video_output.c | 37 ++++++++++++++++++++++++++++---------
+ src/video_output/window.c       |  1 +
+ 11 files changed, 125 insertions(+), 21 deletions(-)
+
+diff --git a/include/vlc_player.h b/include/vlc_player.h
+index 169e949e800d0172b96e11ccf97e171cee0f85fa..d25393a908923eac1b8a87050ea5b68a0433ab90 100644
+--- a/include/vlc_player.h
++++ b/include/vlc_player.h
+@@ -168,7 +168,8 @@ vlc_player_SetPlayAndPause(vlc_player_t *player, bool play_and_pause);
+  * Repeat playback when reaching EOF
+  *
+  * @param player locked player instance
+- * @param repeat_count number of time to restart the same media
++ * @param repeat_count number of times to restart the same media; UINT_MAX for unlimited.
++ * Also updates the active input when playback has already started.
+  */
+ VLC_API void
+ vlc_player_SetRepeatCount(vlc_player_t *player, unsigned repeat_count);
+diff --git a/include/vlc_window.h b/include/vlc_window.h
+index 283d7977c7efd60cd2bfaa442397ed27d67fc0b5..fe9b0049be6cb63d0d3744795fda1ad2734a3e6f 100644
+--- a/include/vlc_window.h
++++ b/include/vlc_window.h
+@@ -422,6 +422,9 @@ typedef struct vlc_window {
+                              window. Once this is set it MUST NOT be changed */
+ 
+     struct {
++        /** Wayland window provider owns the surface viewport. Display modules
++         * must not create a second wp_viewport for that surface. */
++        bool has_wayland_viewport;
+         bool has_double_click; /**< Whether double click events are sent,
+                                     or need to be emulated */
+     } info;
+diff --git a/src/input/decoder.c b/src/input/decoder.c
+index 0988eb624d00827232f8b94f1fb527c4d2699e27..5388579d665cdfcc546644e9ae7c93a7540ea3cd 100644
+--- a/src/input/decoder.c
++++ b/src/input/decoder.c
+@@ -237,6 +237,7 @@ struct vlc_input_decoder_t
+     /* Waiting */
+     bool b_waiting;
+     bool b_first;
++    unsigned thumbnail_frames;
+     bool b_has_data;
+     bool out_started;
+ 
+@@ -532,6 +533,17 @@ static int LoadDecoder(decoder_t *p_dec, bool b_packetizer, es_format_t *fmt_in)
+         es_format_Clean(fmt_in);
+         return -1;
+     }
++    if (!b_packetizer && p_dec->fmt_in->i_cat == VIDEO_ES)
++    {
++        if (!p_dec->p_description) p_dec->p_description = vlc_meta_New();
++        if (p_dec->p_description)
++        {
++            const char *name = module_get_object(p_dec->p_module);
++            vlc_meta_SetExtra(p_dec->p_description, "Active video decoder", name);
++            if (!strcmp(name, "nvdec"))
++                vlc_meta_SetExtra(p_dec->p_description, "Hardware decoding", "NVIDIA NVDEC");
++        }
++    }
+     return 0;
+ }
+ 
+@@ -1621,8 +1633,21 @@ static void ModuleThread_QueueThumbnail( decoder_t *p_dec, picture_t *p_pic )
+     vlc_input_decoder_t *p_owner = dec_get_owner( p_dec );
+ 
+     vlc_fifo_Lock(p_owner->p_fifo);
+-    if( p_owner->b_first )
++    ++p_owner->thumbnail_frames;
++    /* The thumbnail path bypasses ModuleThread_PlayVideo's preroll filter.
++     * Honor decoder preroll for precise seeks; fast seeks keep the first frame. */
++    if (p_owner->b_first && p_owner->i_preroll_end != PREROLL_NONE
++        && p_pic->date != VLC_TICK_INVALID && p_pic->date < p_owner->i_preroll_end) {
++        vlc_fifo_Unlock(p_owner->p_fifo);
++        picture_Release(p_pic);
++        return;
++    }
++    if( p_owner->b_first ) {
++        if (getenv("VLC_NEON_PREVIEW_TRACE") != NULL)
++            msg_Dbg(p_dec, "NEON_PREVIEW_FRAME delivered_frames=%u pts_us=%"PRId64,
++                    p_owner->thumbnail_frames, p_pic->date);
+         decoder_Notify(p_owner, on_thumbnail_ready, p_pic);
++    }
+     p_owner->b_first = false;
+     vlc_fifo_Unlock(p_owner->p_fifo);
+ 
+@@ -2198,6 +2223,7 @@ CreateDecoder( vlc_object_t *p_parent, const struct vlc_input_decoder_cfg *cfg )
+ 
+     p_owner->b_waiting = false;
+     p_owner->b_first = true;
++    p_owner->thumbnail_frames = 0;
+     p_owner->b_has_data = false;
+     p_owner->out_started = false;
+ 
+diff --git a/src/input/es_out.c b/src/input/es_out.c
+index 06af53f738421901db4cc6f2283cd76571732709..5fee754a445b3e125318bebe5acd802b33e7f6ef 100644
+--- a/src/input/es_out.c
++++ b/src/input/es_out.c
+@@ -179,6 +179,7 @@ typedef struct
+ {
+     input_thread_t *p_input;
+     enum input_type input_type;
++    atomic_int_fast64_t thumbnail_origin;
+ 
+     input_source_t *main_source;
+ 
+@@ -456,6 +457,15 @@ decoder_on_thumbnail_ready(vlc_input_decoder_t *decoder, picture_t *pic, void *u
+     if (!p_sys->p_input)
+         return;
+ 
++    /* Only Neon's independent preview input opts in. Preserve playback timestamps.
++     * A decoded PTS is stream-relative: use VLC's demux-origin normalization,
++     * including non-zero MPEG-TS origins, instead of estimating frame/FPS. */
++    if (var_InheritBool(p_sys->p_input, "neon-preview-media-pts")) {
++        vlc_tick_t origin = atomic_load_explicit(&p_sys->thumbnail_origin, memory_order_relaxed);
++        if (pic->date != VLC_TICK_INVALID)
++            pic->date = pic->date - origin + VLC_TICK_0;
++    }
++
+     struct vlc_input_event event = {
+         .type = INPUT_EVENT_THUMBNAIL_READY,
+         .thumbnail = pic,
+@@ -4222,8 +4232,11 @@ static int EsOutVaPrivControlLocked(es_out_sys_t *p_sys, input_source_t *source,
+         vlc_tick_t i_length = va_arg( args, vlc_tick_t );
+         bool b_live = va_arg( args, int );
+ 
+-        if (i_normal_time != VLC_TICK_INVALID)
++        if (i_normal_time != VLC_TICK_INVALID) {
+             source->i_normal_time = i_normal_time;
++            if (p_sys->input_type == INPUT_TYPE_THUMBNAILING && source == p_sys->main_source)
++                atomic_store_explicit(&p_sys->thumbnail_origin, i_normal_time, memory_order_relaxed);
++        }
+ 
+         if( source != p_sys->main_source )
+             return VLC_SUCCESS;
+@@ -4382,6 +4395,7 @@ input_EsOutNew(input_thread_t *p_input, input_source_t *main_source, float rate,
+     p_sys->p_next_frame_es = NULL;
+     p_sys->i_mode   = ES_OUT_MODE_NONE;
+     p_sys->input_type = input_type;
++    atomic_init(&p_sys->thumbnail_origin, VLC_TICK_0);
+ 
+     p_sys->p_pgrm = NULL;
+     vlc_list_init(&p_sys->programs);
+diff --git a/src/input/input.c b/src/input/input.c
+index 082389218df2c6d8b98258586142ba89bad73ca8..4ec7700c552624b73aaa02c5c90e5321da17bc45 100644
+--- a/src/input/input.c
++++ b/src/input/input.c
+@@ -247,6 +247,12 @@ input_thread_t * input_Create( vlc_object_t *p_parent, input_item_t *p_item,
+ 
+     /* Parse input options */
+     input_item_ApplyOptions( VLC_OBJECT(p_input), p_item );
++    if (cfg->type == INPUT_TYPE_THUMBNAILING) {
++        // A still frame needs bounded decode buffering, not playback throughput.
++        // Keep thumbnail workers from competing with the active video decoder.
++        var_Create(p_input, "avcodec-threads", VLC_VAR_INTEGER);
++        var_SetInteger(p_input, "avcodec-threads", 2);
++    }
+ 
+     /* Init Common fields */
+ 
+@@ -305,7 +311,8 @@ input_thread_t * input_Create( vlc_object_t *p_parent, input_item_t *p_item,
+ 
+     if( priv->type != INPUT_TYPE_PLAYBACK )
+     {
+-        p_input->obj.logger = NULL;
++        if (!(priv->type == INPUT_TYPE_THUMBNAILING && getenv("VLC_NEON_PREVIEW_TRACE") != NULL))
++            p_input->obj.logger = NULL;
+         p_input->obj.no_interact = true;
+     }
+ 
+@@ -413,8 +420,22 @@ static void *Run( void *data )
+ 
+     vlc_interrupt_set(&priv->interrupt);
+ 
++    const bool preview_trace = priv->type == INPUT_TYPE_THUMBNAILING && getenv("VLC_NEON_PREVIEW_TRACE") != NULL;
++    const vlc_tick_t open_started = preview_trace ? vlc_tick_now() : 0;
+     if( !Init( p_input ) )
+     {
++        const vlc_tick_t open_finished = preview_trace ? vlc_tick_now() : 0;
++        /* A one-shot preview must seek before its first demuxed picture can
++         * win the thumbnail race. Normal playback keeps its original loop. */
++        if (priv->type == INPUT_TYPE_THUMBNAILING && var_InheritBool(p_input, "neon-preview-media-pts")) {
++            int type;
++            input_control_param_t param;
++            while (ControlPop(p_input, &type, &param, vlc_tick_now(), false) == VLC_SUCCESS)
++                Control(p_input, type, param);
++        }
++        if (preview_trace)
++            msg_Dbg(p_input, "NEON_PREVIEW_INPUT open_ms=%.3f seek_control_ms=%.3f",
++                    (open_finished-open_started)/1000., (vlc_tick_now()-open_finished)/1000.);
+         MainLoop( p_input, true ); /* FIXME it can be wrong (like with VLM) */
+ 
+         /* Clean up */
+diff --git a/src/libvlc-module.c b/src/libvlc-module.c
+index 8729a175568e296cd11ee0f347a454c0c9f30acb..015dadcae983d9580d53cba126f5666dcf413287 100644
+--- a/src/libvlc-module.c
++++ b/src/libvlc-module.c
+@@ -2449,10 +2449,10 @@ vlc_module_begin ()
+ #endif
+ #   define KEY_PROJECTION_TOGGLE  NULL
+ #   define KEY_POSITION           "t"
+-#   define KEY_JUMP_MEXTRASHORT   "Shift+Left"
+-#   define KEY_JUMP_PEXTRASHORT   "Shift+Right"
+-#   define KEY_JUMP_MSHORT        "Alt+Left"
+-#   define KEY_JUMP_PSHORT        "Alt+Right"
++#   define KEY_JUMP_MEXTRASHORT   "Left"
++#   define KEY_JUMP_PEXTRASHORT   "Right"
++#   define KEY_JUMP_MSHORT        "Shift+Left"
++#   define KEY_JUMP_PSHORT        "Shift+Right"
+ #   define KEY_JUMP_MMEDIUM       "Ctrl+Left"
+ #   define KEY_JUMP_PMEDIUM       "Ctrl+Right"
+ #   define KEY_JUMP_MLONG         "Ctrl+Alt+Left"
+@@ -2460,8 +2460,8 @@ vlc_module_begin ()
+ #   define KEY_NAV_ACTIVATE       "Enter"
+ #   define KEY_NAV_UP             "Up"
+ #   define KEY_NAV_DOWN           "Down"
+-#   define KEY_NAV_LEFT           "Left"
+-#   define KEY_NAV_RIGHT          "Right"
++#   define KEY_NAV_LEFT           "Alt+Left"
++#   define KEY_NAV_RIGHT          "Alt+Right"
+ #   define KEY_QUIT               "Ctrl+q"
+ 
+ #ifdef _WIN32 /* On Windows, people expect volume keys to control the master */
+@@ -2748,7 +2748,7 @@ vlc_module_begin ()
+             SUBTEXT_SCALEDOWN_KEY_TEXT, SUBTEXT_SCALE_KEY_LONGTEXT)
+ 
+     set_section ( N_("Jump sizes" ), NULL )
+-    add_integer( "extrashort-jump-size", 3, JIEXTRASHORT_TEXT,
++    add_integer( "extrashort-jump-size", 5, JIEXTRASHORT_TEXT,
+                                     JIEXTRASHORT_LONGTEXT )
+     add_integer( "short-jump-size", 10, JISHORT_TEXT,
+                                     JISHORT_LONGTEXT )
+diff --git a/src/player/input.c b/src/player/input.c
+index 9f20f096942b4b4573be7ed01ef62ae5424615bb..a06f0e1801b05ecb25e0089f0ab580a182a02707 100644
+--- a/src/player/input.c
++++ b/src/player/input.c
+@@ -26,6 +26,7 @@
+ #include <vlc_memstream.h>
+ #include <vlc_dialog.h>
+ #include "player.h"
++#include <limits.h>
+ 
+ struct vlc_player_track_priv *
+ vlc_player_input_FindTrackById(struct vlc_player_input *input, vlc_es_id_t *id,
+@@ -1027,7 +1028,7 @@ input_thread_Events(input_thread_t *input_thread,
+             }
+             else if (input->repeat > 0)
+             {
+-                input->repeat--;
++                if (input->repeat != UINT_MAX) input->repeat--;
+                 handled =
+                     input_ControlPush(input->thread,
+                                       INPUT_CONTROL_RESET_POSITION, NULL) == 0;
+diff --git a/src/player/player.c b/src/player/player.c
+index 1791e52367d7bf847c32e0e0ff9399e5e39dff95..85ca14b880524a7c6ffa29ab5137c38e160123db 100644
+--- a/src/player/player.c
++++ b/src/player/player.c
+@@ -1331,6 +1331,8 @@ vlc_player_SetRepeatCount(vlc_player_t *player, unsigned repeat_count)
+ {
+     vlc_player_assert_locked(player);
+     player->repeat = repeat_count;
++    struct vlc_player_input *input = vlc_player_get_input_locked(player);
++    if (input) input->repeat = repeat_count;
+ }
+ 
+ static void
+diff --git a/src/preparser/internal.c b/src/preparser/internal.c
+index 6b1e160058ee9f96a080f823238669c2b93975bc..ddaee1d23c4ea05e9dc54d42e0a3ddaa5ea54875 100644
+--- a/src/preparser/internal.c
++++ b/src/preparser/internal.c
+@@ -23,6 +23,9 @@
+ #endif
+ 
+ #include <fcntl.h>
++#ifdef __linux__
++# include <sys/resource.h>
++#endif
+ 
+ #include <vlc_common.h>
+ #include <vlc_atomic.h>
+@@ -510,6 +513,15 @@ ThumbnailerRun(void *userdata)
+     struct vlc_preparser_req *req = userdata;
+     struct vlc_preparser_req_owner *req_owner = preparser_req_get_owner(req);
+     struct preparser_sys *preparser = req_owner->preparser;
++#ifdef __linux__
++    // Linux niceness is per-thread; child input/decoder threads inherit it.
++    // Only this independent Neon thumbnail executor is affected.
++    if (var_Type(preparser->owner, "neon-preview-media-pts") != 0
++        && var_GetBool(preparser->owner, "neon-preview-media-pts"))
++        (void) setpriority(PRIO_PROCESS, 0, 10);
++#endif
++    const bool trace = getenv("VLC_NEON_PREVIEW_TRACE") != NULL;
++    const vlc_tick_t run_started = trace ? vlc_tick_now() : 0;
+ 
+     static const struct vlc_input_thread_callbacks cbs = {
+         .on_event = on_thumbnailer_input_event,
+@@ -570,9 +582,13 @@ ThumbnailerRun(void *userdata)
+     else
+         timeout = vlc_sem_timedwait(&req_owner->preparse_ended, deadline) != 0;
+ 
++    const vlc_tick_t picture_ready = trace ? vlc_tick_now() : 0;
+     /* tear the input thread down before reading what it produced to avoid races */
+     input_Stop(input);
+     input_Close(input);
++    if (trace)
++        msg_Dbg(preparser->owner, "NEON_PREVIEW_BACKEND open_seek_decode_ms=%.3f stop_close_ms=%.3f",
++                (picture_ready-run_started)/1000., (vlc_tick_now()-picture_ready)/1000.);
+ 
+     if (timeout)
+         req_owner->preparse_status = VLC_ETIMEOUT;
+diff --git a/src/video_output/video_output.c b/src/video_output/video_output.c
+index bde65e65ecdc6319bbc7a4a726bda43d60b3e791..2674bc969784d8e6edafde1114b1e508c04879ae 100644
+--- a/src/video_output/video_output.c
++++ b/src/video_output/video_output.c
+@@ -1165,13 +1165,11 @@ static picture_t *ConvertRGBAAndBlend(vout_thread_sys_t *vout, picture_t *pic,
+                                       vlc_render_subpicture *subpic)
+ {
+     vout_thread_sys_t *sys = vout;
+-    /* This function will convert the pic to RGBA and blend the subpic to it.
++    /* This function converts the pic to RGBA and optionally blends a subpic.
+      * The returned pic can't be used to display since the chroma will be
+      * different than the "vout display" one, but it can be used for snapshots.
+      * */
+ 
+-    assert(sys->spu_blend);
+-
+     filter_owner_t owner = {
+         .video = &vout_video_cbs,
+         .sys = vout,
+@@ -1180,13 +1178,13 @@ static picture_t *ConvertRGBAAndBlend(vout_thread_sys_t *vout, picture_t *pic,
+     if (!filterc)
+         return NULL;
+ 
+-    es_format_t src = sys->spu_blend->fmt_out;
++    es_format_t src;
++    es_format_Init(&src, VIDEO_ES, pic->format.i_chroma);
++    src.video = pic->format;
+     es_format_t dst = src;
+-    dst.video.i_chroma = VLC_CODEC_RGBA;
++    dst.i_codec = dst.video.i_chroma = VLC_CODEC_RGBA;
+ 
+-    filter_chain_Reset(filterc, &src,
+-                       NULL /* TODO output video context of blender */,
+-                       &dst);
++    filter_chain_Reset(filterc, &src, picture_GetVideoContext(pic), &dst);
+ 
+     if (filter_chain_AppendConverter(filterc, &dst) != VLC_SUCCESS)
+     {
+@@ -1198,6 +1196,8 @@ static picture_t *ConvertRGBAAndBlend(vout_thread_sys_t *vout, picture_t *pic,
+     pic = filter_chain_VideoFilter(filterc, pic);
+     filter_chain_Delete(filterc);
+ 
++    if (pic && !subpic)
++        return pic;
+     if (pic)
+     {
+         vlc_blender_t *swblend = filter_NewBlend(VLC_OBJECT(&vout->obj), &dst.video);
+@@ -1286,7 +1286,15 @@ static int PrerenderPicture(vout_thread_sys_t *sys, picture_t *filtered,
+     //the source format.
+     // In early SPU blending the blending is done into the source chroma,
+     // otherwise it's done in the display chroma
+-    const bool blending_before_converter = vd->source->orientation == ORIENT_NORMAL;
++    const vlc_chroma_description_t *source_chroma =
++        vlc_fourcc_GetChromaDescription(vd->source->i_chroma);
++    const vlc_chroma_description_t *display_chroma =
++        vlc_fourcc_GetChromaDescription(vd->fmt->i_chroma);
++    // SHM software output must blend after the hardware-to-CPU converter.
++    const bool hardware_to_software = source_chroma && !source_chroma->plane_count
++        && display_chroma && display_chroma->plane_count;
++    const bool blending_before_converter = vd->source->orientation == ORIENT_NORMAL
++        && !hardware_to_software;
+ 
+     const vout_display_place_t *video_place = NULL; // default to fit the video
+     video_format_t fmt_spu;
+@@ -1371,6 +1379,17 @@ static int PrerenderPicture(vout_thread_sys_t *sys, picture_t *filtered,
+     if (do_snapshot)
+     {
+         assert(snap_pic);
++        const vlc_chroma_description_t *snap_chroma =
++            vlc_fourcc_GetChromaDescription(snap_pic->format.i_chroma);
++        if (snap_chroma && !snap_chroma->plane_count) {
++            // Export needs CPU pixels; retain the hardware context for copy-back.
++            // This conversion runs only for an explicitly requested screenshot.
++            picture_t *copy = ConvertRGBAAndBlend(sys, snap_pic, NULL);
++            if (copy) {
++                if (snap_pic != todisplay) picture_Release(snap_pic);
++                snap_pic = copy;
++            }
++        }
+         vout_snapshot_Set(sys->snapshot, vd->source, snap_pic);
+         if (snap_pic != todisplay)
+             picture_Release(snap_pic);
+diff --git a/src/video_output/window.c b/src/video_output/window.c
+index d8bc7311f212b67041ea42793e32062b52df40f7..f2d6e16ed8f2c3759244be5c4c57c7689d8918df 100644
+--- a/src/video_output/window.c
++++ b/src/video_output/window.c
+@@ -72,6 +72,7 @@ vlc_window_t *vlc_window_New(vlc_object_t *obj, const char *module,
+ 
+     memset(&window->handle, 0, sizeof(window->handle));
+     window->info.has_double_click = false;
++    window->info.has_wayland_viewport = false;
+     window->sys = NULL;
+     assert(owner != NULL);
+     window->owner = *owner;

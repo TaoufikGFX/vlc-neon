@@ -1,0 +1,13 @@
+{
+    "KPackageStructure": "KWin/Script",
+    "KPlugin": {
+        "Id": "vlc-neon-pip",
+        "Name": "VLC Neon Picture-in-Picture",
+        "Description": "Keeps the VLC Neon Picture-in-Picture window above other windows and places it in the bottom-right corner of the work area",
+        "Authors": [{ "Name": "VLC Neon" }],
+        "License": "GPL-2.0-or-later",
+        "Version": "1.0"
+    },
+    "X-Plasma-API": "javascript",
+    "X-Plasma-MainScript": "code/main.js"
+}

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: FSFAP -->
+<component type="desktop-application">
+  <id>org.VideoLAN.VLCNeon</id>
+  <metadata_license>FSFAP</metadata_license>
+  <project_license>GPL-2.0-or-later</project_license>
+  <name>VLC Neon</name>
+  <summary>VLC media player with seek previews, Picture-in-Picture and practical playback controls</summary>
+  <developer id="com.github.taoufikgfx">
+    <name>Taoufik Mouadab</name>
+  </developer>
+  <description>
+    <p>VLC Neon is an unofficial build of the VLC 4 media player with a neon identity and extra
+    everyday controls: thumbnail previews on the seek bar, a separate Picture-in-Picture window,
+    speed presets, repeat counts, volume boost, resume prompts and per-file settings.</p>
+    <p>Based on VLC media player by VideoLAN. Not an official VideoLAN product.</p>
+  </description>
+  <launchable type="desktop-id">org.VideoLAN.VLCNeon.desktop</launchable>
+  <url type="homepage">https://taoufikgfx.github.io/vlc-neon/</url>
+  <url type="bugtracker">https://github.com/TaoufikGFX/vlc-neon/issues</url>
+  <url type="vcs-browser">https://github.com/TaoufikGFX/vlc-neon</url>
+  <url type="donation">https://ko-fi.com/taoufikmouadab</url>
+  <categories>
+    <category>AudioVideo</category>
+    <category>Player</category>
+  </categories>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="1.0.0" date="2026-10-10"/>
+  </releases>
+</component>

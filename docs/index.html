@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VLC Neon</title>
+<meta name="description" content="VLC Neon: the VLC media player you know, with a neon glow. Seek previews, Picture-in-Picture, speed and repeat presets, volume boost. Free and open source for Linux.">
+<meta name="theme-color" content="#07051a">
+<meta property="og:title" content="VLC Neon">
+<meta property="og:description" content="The VLC you know, with a neon glow. Seek previews, Picture-in-Picture, speed and repeat presets for Linux.">
+<meta property="og:image" content="https://taoufikgfx.github.io/vlc-neon/assets/og.png">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" href="assets/vlc-neon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/vlc-neon-32.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>
+  // Apply the saved theme before first paint (dark is the default)
+  (function () {
+    try {
+      var q = /[?&]theme=(light|dark)/.exec(location.search);
+      var t = q ? q[1] : localStorage.getItem('vlc-neon-theme');
+      if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+    } catch (e) {}
+  })();
+</script>
+<style>
+  :root {
+    /* Neon identity, from the VLC Neon icon */
+    --violet: #8e58ff;
+    --cyan: #48efec;
+    --cyan-soft: #a9fff6;
+    --blue: #4796ff;
+    --orange: #ff952f;
+    --gold: #ffe37b;
+    --pink: #ff3766;
+
+    --bg: #07051a;
+    --bg-2: #0d0a24;
+    --surface: rgba(255, 255, 255, 0.04);
+    --surface-2: rgba(255, 255, 255, 0.07);
+    --border: rgba(169, 255, 246, 0.12);
+    --text: #eeeaff;
+    --muted: #a7a2c8;
+    --faint: #6f6a92;
+    --code-bg: #0b0920;
+    --glow: 0.55;
+    --shadow: 0 30px 80px -30px rgba(142, 88, 255, 0.55);
+    color-scheme: dark;
+  }
+  :root[data-theme="light"] {
+    --bg: #f7f5ff;
+    --bg-2: #eeeaff;
+    --surface: rgba(23, 19, 44, 0.04);
+    --surface-2: rgba(23, 19, 44, 0.07);
+    --border: rgba(23, 19, 44, 0.12);
+    --text: #17132c;
+    --muted: #4c4770;
+    --faint: #7a759c;
+    --code-bg: #17132c;
+    --glow: 0.28;
+    --shadow: 0 30px 70px -30px rgba(71, 150, 255, 0.45);
+    color-scheme: light;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.6 Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+    overflow-x: hidden;
+    transition: background-color .35s ease, color .35s ease;
+  }
+  img { max-width: 100%; height: auto; display: block; }
+  a { color: inherit; }
+  .wrap { width: min(1160px, 100% - 32px); margin-inline: auto; }
+
+  /* Ambient neon light */
+  .aurora { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
+  .aurora span {
+    position: absolute; border-radius: 50%; filter: blur(90px); opacity: var(--glow);
+    animation: drift 22s ease-in-out infinite alternate;
+  }
+  .aurora .a1 { width: 46vmax; height: 46vmax; background: var(--violet); top: -18vmax; right: -12vmax; }
+  .aurora .a2 { width: 34vmax; height: 34vmax; background: var(--cyan); bottom: -16vmax; right: 8vmax; opacity: calc(var(--glow) * .55); animation-duration: 28s; }
+  .aurora .a3 { width: 30vmax; height: 30vmax; background: var(--pink); bottom: -14vmax; left: -12vmax; opacity: calc(var(--glow) * .45); animation-duration: 25s; }
+  @keyframes drift { to { transform: translate3d(-4vmax, 3vmax, 0) scale(1.08); } }
+
+  /* Header */
+  header.top { position: sticky; top: 0; z-index: 10; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    background: color-mix(in srgb, var(--bg) 72%, transparent); border-bottom: 1px solid var(--border); }
+  .nav { display: flex; align-items: center; gap: 16px; height: 64px; }
+  .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; font-weight: 700; letter-spacing: -.01em; }
+  .brand img { width: 30px; height: 30px; }
+  .nav nav { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+  .nav nav a { text-decoration: none; color: var(--muted); font-size: 14px; font-weight: 500; padding: 8px 10px; border-radius: 10px; }
+  .nav nav a:hover { color: var(--text); background: var(--surface-2); }
+  .icon-btn { display: inline-grid; place-items: center; width: 38px; height: 38px; border-radius: 12px;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; }
+  .icon-btn:hover { background: var(--surface-2); }
+  .icon-btn svg { width: 18px; height: 18px; }
+  .sun { display: none; } :root[data-theme="light"] .sun { display: block; } :root[data-theme="light"] .moon { display: none; }
+  @media (max-width: 720px) { .nav nav a.hide-sm { display: none; } }
+
+  /* Hero */
+  .hero { padding: 72px 0 40px; display: grid; grid-template-columns: 1.02fr 1fr; gap: 48px; align-items: center; }
+  .eyebrow { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; font-size: 13px; font-weight: 600;
+    color: var(--cyan-soft); background: rgba(72, 239, 236, .08); border: 1px solid rgba(72, 239, 236, .25); }
+  :root[data-theme="light"] .eyebrow { color: #0d6f74; background: rgba(72, 239, 236, .14); }
+  .eyebrow i { width: 7px; height: 7px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 12px var(--cyan); }
+  .hero-icon { width: 96px; height: 96px; margin: 22px 0 18px; filter: drop-shadow(0 12px 30px rgba(255, 149, 47, .35)); animation: float 6s ease-in-out infinite; }
+  @keyframes float { 50% { transform: translateY(-6px); } }
+  h1 { font-size: clamp(44px, 7vw, 76px); line-height: 1; letter-spacing: -.035em; margin: 0 0 16px; font-weight: 800; }
+  h1 .neon { background: linear-gradient(100deg, var(--gold), var(--orange) 35%, var(--pink) 70%, var(--violet)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .lead { font-size: clamp(17px, 2.1vw, 20px); color: var(--muted); max-width: 34em; margin: 0 0 28px; }
+  .cta { display: flex; flex-wrap: wrap; gap: 10px; }
+  .btn { display: inline-flex; align-items: center; gap: 10px; padding: 12px 18px; border-radius: 14px; font-weight: 600; font-size: 15px; text-decoration: none;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text); transition: transform .18s ease, box-shadow .18s ease, background .18s ease; }
+  .btn:hover { transform: translateY(-2px); background: var(--surface-2); }
+  .btn small { display: block; font-weight: 500; font-size: 12px; color: var(--muted); line-height: 1.2; }
+  .btn span { line-height: 1.2; }
+  .btn.primary { color: #0b0820; border: 0; background: linear-gradient(120deg, var(--cyan-soft), var(--cyan) 45%, var(--blue)); box-shadow: 0 10px 30px -8px rgba(72, 239, 236, .6); }
+  .btn.primary small { color: rgba(11, 8, 32, .7); }
+  .btn.primary:hover { box-shadow: 0 16px 40px -10px rgba(72, 239, 236, .8); background: linear-gradient(120deg, var(--cyan-soft), var(--cyan) 45%, var(--blue)); }
+  .btn.kofi { border-color: rgba(255, 55, 102, .45); }
+  .btn.kofi:hover { box-shadow: 0 10px 30px -10px rgba(255, 55, 102, .7); }
+  .btn svg { width: 18px; height: 18px; flex: none; }
+  .note { margin-top: 14px; font-size: 13px; color: var(--faint); }
+  .note a { color: var(--muted); }
+
+  .hero-shot { position: relative; }
+  .hero-shot img { border-radius: 18px; box-shadow: var(--shadow); border: 1px solid var(--border); transform: perspective(1400px) rotateY(-9deg) rotateX(3deg);
+    transition: transform .6s cubic-bezier(.2, .7, .2, 1); }
+  .hero-shot:hover img { transform: perspective(1400px) rotateY(0) rotateX(0); }
+  .hero-shot::after { content: ""; position: absolute; inset: 12% 8% -6%; z-index: -1; filter: blur(60px); opacity: var(--glow);
+    background: radial-gradient(closest-side, var(--cyan), transparent), radial-gradient(closest-side at 80% 20%, var(--violet), transparent); }
+  @media (max-width: 900px) {
+    .hero { grid-template-columns: 1fr; padding-top: 48px; gap: 36px; }
+    .hero-shot img { transform: none; }
+  }
+
+  /* Sections */
+  section { padding: 72px 0; }
+  .section-head { max-width: 640px; margin-bottom: 32px; }
+  .kicker { font-size: 13px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--orange); }
+  h2 { font-size: clamp(30px, 4vw, 42px); line-height: 1.1; letter-spacing: -.025em; margin: 8px 0 12px; }
+  .section-head p { color: var(--muted); margin: 0; }
+
+  .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+  @media (max-width: 900px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 560px) { .grid { grid-template-columns: 1fr; } }
+  .card { position: relative; padding: 22px; border-radius: 18px; background: var(--surface); border: 1px solid var(--border); overflow: hidden;
+    transition: transform .25s ease, border-color .25s ease; }
+  .card:hover { transform: translateY(-3px); border-color: rgba(142, 88, 255, .45); }
+  .card::before { content: ""; position: absolute; inset: -1px; border-radius: inherit; padding: 1px; opacity: 0; transition: opacity .25s;
+    background: linear-gradient(130deg, var(--cyan), var(--violet), var(--pink));
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; }
+  .card:hover::before { opacity: .8; }
+  .card .ic { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; margin-bottom: 14px;
+    background: linear-gradient(135deg, rgba(142, 88, 255, .25), rgba(72, 239, 236, .18)); border: 1px solid var(--border); }
+  .card .ic svg { width: 22px; height: 22px; stroke: var(--cyan); }
+  :root[data-theme="light"] .card .ic svg { stroke: #6a3cf0; }
+  .card h3 { margin: 0 0 6px; font-size: 17px; letter-spacing: -.01em; }
+  .card p { margin: 0; color: var(--muted); font-size: 15px; }
+
+  /* Gallery */
+  .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+  .tab { font: inherit; font-size: 14px; font-weight: 600; padding: 8px 14px; border-radius: 999px; cursor: pointer;
+    color: var(--muted); background: var(--surface); border: 1px solid var(--border); }
+  .tab[aria-selected="true"] { color: #0b0820; background: var(--cyan); border-color: transparent; }
+  .stage { position: relative; border-radius: 20px; padding: clamp(10px, 2vw, 22px); background: var(--surface); border: 1px solid var(--border); }
+  .stage img { width: 100%; border-radius: 12px; aspect-ratio: 1164 / 744; object-fit: contain; }
+  .stage figcaption { margin-top: 12px; color: var(--muted); font-size: 14px; text-align: center; }
+  .fade { animation: fadein .45s ease; }
+  @keyframes fadein { from { opacity: 0; transform: scale(.985); } }
+
+  /* Install */
+  .install { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+  @media (max-width: 900px) { .install { grid-template-columns: 1fr; } }
+  .step { padding: 22px; border-radius: 18px; background: var(--surface); border: 1px solid var(--border); min-width: 0; }
+  .step h3 { margin: 0 0 4px; font-size: 18px; display: flex; align-items: center; gap: 8px; }
+  .step p { margin: 0 0 14px; color: var(--muted); font-size: 14px; }
+  .step .badge { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 999px; background: rgba(255, 149, 47, .15); color: var(--orange); }
+  code, .btn small { font-feature-settings: "tnum" 1; }
+  pre { margin: 0; padding: 14px 16px; border-radius: 12px; background: var(--code-bg); color: #dcf9ff; overflow-x: auto;
+    font: 13px/1.6 "JetBrains Mono", ui-monospace, monospace; border: 1px solid rgba(169, 255, 246, .1); }
+  pre .c { color: #7d78a6; }
+  .step a.dl { display: inline-block; margin-top: 12px; font-size: 14px; font-weight: 600; color: var(--cyan); }
+  :root[data-theme="light"] .step a.dl { color: #0d6f74; }
+
+  /* Credits & support */
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 800px) { .split { grid-template-columns: 1fr; } }
+  .panel { padding: 28px; border-radius: 20px; border: 1px solid var(--border); background: var(--surface); }
+  .panel h3 { margin: 0 0 8px; font-size: 20px; }
+  .panel p { color: var(--muted); margin: 0 0 12px; }
+  .panel.support { background: linear-gradient(135deg, rgba(255, 55, 102, .14), rgba(142, 88, 255, .12)); }
+
+  footer { padding: 36px 0 48px; border-top: 1px solid var(--border); color: var(--faint); font-size: 14px; }
+  .foot { display: flex; flex-wrap: wrap; gap: 16px 24px; align-items: center; justify-content: space-between; }
+  .foot nav { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+  .foot a { color: var(--muted); text-decoration: none; }
+  .foot a:hover { color: var(--text); }
+  .foot .disclaimer { flex-basis: 100%; }
+
+  /* Reveal on scroll */
+  .reveal { opacity: 0; transform: translateY(14px); transition: opacity .6s ease, transform .6s ease; }
+  .reveal.in { opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+    .reveal { opacity: 1; transform: none; }
+  }
+  :focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<div class="aurora" aria-hidden="true"><span class="a1"></span><span class="a2"></span><span class="a3"></span></div>
+
+<header class="top">
+  <div class="wrap nav">
+    <a class="brand" href="#top"><img src="assets/vlc-neon.svg" alt="" width="30" height="30">VLC Neon</a>
+    <nav aria-label="Main">
+      <a class="hide-sm" href="#features">Features</a>
+      <a class="hide-sm" href="#screenshots">Screenshots</a>
+      <a href="#install">Install</a>
+      <a class="icon-btn" href="https://github.com/TaoufikGFX/vlc-neon" aria-label="GitHub repository" title="GitHub">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.42-2.7 5.4-5.26 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"/></svg>
+      </a>
+      <button class="icon-btn" id="theme" type="button" aria-label="Switch to light theme" title="Toggle light / dark">
+        <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>
+        <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+      </button>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+  <div class="wrap hero">
+    <div>
+      <span class="eyebrow"><i></i>v1.0.0 · free &amp; open source for Linux</span>
+      <img class="hero-icon" src="assets/vlc-neon-256.png" alt="VLC Neon icon" width="96" height="96">
+      <h1>VLC <span class="neon">Neon</span></h1>
+      <p class="lead">The VLC you know, with a neon glow. Thumbnail previews on the seek bar, Picture-in-Picture, speed and repeat presets, volume boost and the little controls you reach for every day.</p>
+      <div class="cta">
+        <a class="btn primary" href="https://github.com/TaoufikGFX/vlc-neon/releases/latest/download/vlc-neon-1.0.0-1.fc44.x86_64.rpm">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16"/></svg>
+          <span>Fedora .rpm<small>Fedora 44 · x86_64</small></span>
+        </a>
+        <a class="btn" href="https://github.com/TaoufikGFX/vlc-neon/releases/latest/download/vlc-neon-1.0.0-x86_64.AppImage">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16"/></svg>
+          <span>AppImage<small>Any distro · glibc 2.39+</small></span>
+        </a>
+        <a class="btn" href="https://github.com/TaoufikGFX/vlc-neon/releases/latest/download/vlc-neon-1.0.0.flatpak">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16"/></svg>
+          <span>Flatpak<small>Single-file bundle</small></span>
+        </a>
+        <a class="btn kofi" href="https://ko-fi.com/taoufikmouadab">
+          <span aria-hidden="true">☕</span><span>Support<small>Buy me a coffee</small></span>
+        </a>
+      </div>
+      <p class="note">Checksums, source code and all files on the <a href="https://github.com/TaoufikGFX/vlc-neon/releases/latest">release page</a>. Installs next to your regular VLC.</p>
+    </div>
+    <div class="hero-shot">
+      <img src="assets/screenshots/seek-preview.webp" alt="VLC Neon playing a video with a thumbnail preview over the seek bar" width="1164" height="744">
+    </div>
+  </div>
+
+  <section id="features">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <span class="kicker">Features</span>
+        <h2>Everything VLC plays, with fewer clicks.</h2>
+        <p>VLC's engine, codecs and interface, plus the controls that were missing.</p>
+      </div>
+      <div class="grid">
+        <article class="card reveal"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M3 20h18M9 20v-4"/></svg></div>
+          <h3>Seek-bar previews</h3><p>Hover the timeline to see the frame and timestamp before you jump, in the window and in fullscreen.</p></article>
+        <article class="card reveal"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><rect x="12" y="12" width="7" height="5" rx="1"/></svg></div>
+          <h3>Picture-in-Picture</h3><p>A small always-on-top window with its own seek bar, ±3 s / ±10 s, play/pause and mute.</p></article>
+        <article class="card reveal"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14l4-4"/><path d="M3.3 19a10 10 0 1 1 17.4 0"/></svg></div>
+          <h3>Speed presets</h3><p>From 0.25× to 4× in one click, with native fine adjustment still there.</p></article>
+        <article class="card reveal"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/></svg></div>
+          <h3>Repeat 1–5× or forever</h3><p>Pick how many extra plays, or unlimited. A badge on the button shows the count, and it's remembered.</p></article>
+        <article class="card reveal"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg></div>
+          <h3>Volume boost to 300 %</h3><p>Presets from 125 % up, with a peak limiter to keep quiet videos clear.</p></article>
+        <article class="card reveal"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg></div>
+          <h3>Resume &amp; per-file memory</h3><p>Pick up where you stopped. Speed, volume, tracks and delays are remembered per file.</p></article>
+        <article class="card reveal"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg></div>
+          <h3>Video info panel</h3><p>Resolution, codecs, decoder and hardware decoding at a glance, each with a copy button.</p></article>
+        <article class="card reveal"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg></div>
+          <h3>Better hotkeys</h3><p>←/→ 5 s, Shift 10 s, Ctrl 60 s, E / Shift+E frame by frame, plus ±3 s buttons on the toolbar.</p></article>
+        <article class="card reveal"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3 7h7l-5.5 4.5 2 7.5L12 17l-6.5 4 2-7.5L2 9h7z"/></svg></div>
+          <h3>Neon, side by side</h3><p>New icon, Inter typography, light and dark themes. Own settings and launcher, so regular VLC stays untouched.</p></article>
+      </div>
+    </div>
+  </section>
+
+  <section id="screenshots">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <span class="kicker">Screenshots</span>
+        <h2>See it in action.</h2>
+        <p>Captured from a fresh profile, playing an abstract animation made for this page.</p>
+      </div>
+      <div class="tabs" role="tablist" aria-label="Screenshots" id="tabs"></div>
+      <figure class="stage reveal" style="margin:0">
+        <img id="shot" src="assets/screenshots/player-night.webp" alt="Main player" width="1164" height="744">
+        <figcaption id="caption">Main player</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section id="install">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <span class="kicker">Install</span>
+        <h2>Pick your package.</h2>
+        <p>All three install next to regular VLC. Files and <code>SHA256SUMS</code> are on the <a href="https://github.com/TaoufikGFX/vlc-neon/releases/latest">release page</a>.</p>
+      </div>
+      <div class="install">
+        <div class="step reveal">
+          <h3>Fedora <span class="badge">.rpm</span></h3>
+          <p>Fedora 44, x86_64. Installs into <code>/opt/vlc-neon</code>.</p>
+          <pre><code>sudo dnf install ./vlc-neon-1.0.0-1.fc44.x86_64.rpm</code></pre>
+          <a class="dl" href="https://github.com/TaoufikGFX/vlc-neon/releases/latest/download/vlc-neon-1.0.0-1.fc44.x86_64.rpm">Download .rpm →</a>
+        </div>
+        <div class="step reveal">
+          <h3>AppImage <span class="badge">any distro</span></h3>
+          <p>Ubuntu 24.04+, Debian 13+, Fedora 40+ (glibc 2.39+).</p>
+          <pre><code>chmod +x vlc-neon-1.0.0-x86_64.AppImage
+./vlc-neon-1.0.0-x86_64.AppImage</code></pre>
+          <a class="dl" href="https://github.com/TaoufikGFX/vlc-neon/releases/latest/download/vlc-neon-1.0.0-x86_64.AppImage">Download AppImage →</a>
+        </div>
+        <div class="step reveal">
+          <h3>Flatpak <span class="badge">bundle</span></h3>
+          <p>Uses the KDE 6.11 runtime from Flathub.</p>
+          <pre><code>flatpak install --user ./vlc-neon-1.0.0.flatpak
+flatpak run io.github.TaoufikGFX.vlc-neon</code></pre>
+          <a class="dl" href="https://github.com/TaoufikGFX/vlc-neon/releases/latest/download/vlc-neon-1.0.0.flatpak">Download Flatpak →</a>
+        </div>
+      </div>
+      <p class="note reveal">Prefer building it yourself? The repository holds the patches on top of a pinned VLC commit, with <code>scripts/fetch-upstream.sh</code> and <code>scripts/build.sh</code>. See the <a href="https://github.com/TaoufikGFX/vlc-neon#%EF%B8%8F-build-from-source">README</a>.</p>
+    </div>
+  </section>
+
+  <section id="credits">
+    <div class="wrap split">
+      <div class="panel reveal">
+        <h3>Credits</h3>
+        <p>Based on <a href="https://www.videolan.org/vlc/">VLC media player</a> by <a href="https://www.videolan.org/">VideoLAN</a> and its contributors. Not an official VideoLAN product.</p>
+        <p>Free software under the GPL-2.0-or-later, like VLC. Every release ships the complete source: the pinned upstream VLC, the patches and the build scripts. Interface font: Inter (SIL OFL).</p>
+      </div>
+      <div class="panel support reveal">
+        <h3>☕ Support VLC Neon</h3>
+        <p>VLC Neon is free. If it makes your evenings a bit nicer, a coffee keeps the next release coming.</p>
+        <a class="btn kofi" href="https://ko-fi.com/taoufikmouadab"><span aria-hidden="true">☕</span><span>Support on Ko-fi</span></a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <a class="brand" href="#top"><img src="assets/vlc-neon.svg" alt="" width="24" height="24">VLC Neon</a>
+    <nav aria-label="Links">
+      <a href="https://github.com/TaoufikGFX/vlc-neon">GitHub</a>
+      <a href="https://taoufikmouadab.com">taoufikmouadab.com</a>
+      <a href="https://ko-fi.com/taoufikmouadab">Ko-fi</a>
+      <a href="https://github.com/TaoufikGFX">@TaoufikGFX</a>
+    </nav>
+    <p class="disclaimer">Based on VLC media player by VideoLAN. Not an official VideoLAN product. VLC is a trademark of VideoLAN.</p>
+  </div>
+</footer>
+
+<script>
+  (function () {
+    var root = document.documentElement;
+    var btn = document.getElementById('theme');
+    function current() { return root.getAttribute('data-theme') === 'light' ? 'light' : 'dark'; }
+    function label() { btn.setAttribute('aria-label', current() === 'light' ? 'Switch to dark theme' : 'Switch to light theme'); }
+    label();
+    btn.addEventListener('click', function () {
+      var next = current() === 'light' ? 'dark' : 'light';
+      root.setAttribute('data-theme', next);
+      try { localStorage.setItem('vlc-neon-theme', next); } catch (e) {}
+      label();
+    });
+
+    var shots = [
+      ['player-night', 'Player', 'Main player, dark theme'],
+      ['seek-preview', 'Seek preview', 'Thumbnail and timestamp while hovering the seek bar'],
+      ['pip', 'Picture-in-Picture', 'Picture-in-Picture window'],
+      ['repeat-menu', 'Repeat', 'Repeat 1–5 times or unlimited'],
+      ['speed-menu', 'Speed', 'Playback speed presets'],
+      ['boost-menu', 'Boost', 'Volume boost up to 300 %'],
+      ['video-panel', 'Video info', 'Video info panel'],
+      ['playlist', 'Queue', 'Play queue'],
+      ['home-night', 'Dark', 'Home, dark theme'],
+      ['home-day', 'Light', 'Home, light theme']
+    ];
+    var tabs = document.getElementById('tabs');
+    var img = document.getElementById('shot');
+    var cap = document.getElementById('caption');
+    shots.forEach(function (s, i) {
+      var b = document.createElement('button');
+      b.className = 'tab'; b.type = 'button'; b.setAttribute('role', 'tab');
+      b.setAttribute('aria-selected', i === 0 ? 'true' : 'false');
+      b.textContent = s[1];
+      b.addEventListener('click', function () {
+        Array.prototype.forEach.call(tabs.children, function (t) { t.setAttribute('aria-selected', 'false'); });
+        b.setAttribute('aria-selected', 'true');
+        img.classList.remove('fade'); void img.offsetWidth; img.classList.add('fade');
+        img.src = 'assets/screenshots/' + s[0] + '.webp'; img.alt = s[2]; cap.textContent = s[2];
+      });
+      tabs.appendChild(b);
+      var pre = new Image(); pre.src = 'assets/screenshots/' + s[0] + '.webp';
+    });
+
+    var items = document.querySelectorAll('.reveal');
+    if ('IntersectionObserver' in window) {
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
+      }, { rootMargin: '0px 0px -8% 0px' });
+      items.forEach(function (el) { io.observe(el); });
+    } else {
+      items.forEach(function (el) { el.classList.add('in'); });
+    }
+  })();
+</script>
+</body>
+</html>

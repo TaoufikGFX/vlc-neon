@@ -1,0 +1,21 @@
+# Build trees and outputs
+/upstream/
+/build/
+/dist/
+/repo/
+/.flatpak-builder/
+*.AppImage
+*.flatpak
+*.rpm
+*.tar.gz
+# Never commit logs, media or local configs
+*.log
+*.mp4
+*.mkv
+*.webm
+vlcrc
+*qt-interface.conf
+__pycache__/
+*.pyc
+*.o
+*.so

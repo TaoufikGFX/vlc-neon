@@ -1,0 +1,103 @@
+From: Taoufik Mouadab <27153304+TaoufikGFX@users.noreply.github.com>
+Subject: [PATCH 0001] VLC Neon application identity
+
+Separate binary name (vlc-neon), application ID org.VideoLAN.VLCNeon, its own
+XDG config/cache/data directories and MPRIS name, so VLC Neon can be installed
+next to the distribution's VLC without sharing settings.
+
+Applies on top of VLC upstream commit e77e49b5dff7484dbf70cd1540a6a568e1890280.
+SPDX-License-Identifier: GPL-2.0-or-later
+---
+ bin/meson.build                  | 3 ++-
+ bin/vlc.c                        | 4 ++--
+ modules/control/dbus/dbus.c      | 2 +-
+ modules/control/dbus/dbus_root.c | 4 ++--
+ src/posix/dirs.c                 | 4 ++--
+ 5 files changed, 9 insertions(+), 8 deletions(-)
+
+diff --git a/bin/meson.build b/bin/meson.build
+index b02d0769b233a363323c66426a71298a88e1cc34..8e997cb04f4a9bdba8f0b8ad6821f318248eaaaf 100644
+--- a/bin/meson.build
++++ b/bin/meson.build
+@@ -40,8 +40,9 @@ if build_vlc and (host_system != 'darwin' or have_osx) and not have_win_store an
+         )
+     endif
+ 
+-    executable('vlc',
++    executable('vlc-neon',
+         vlc_sources + vlc_win_extra,
++        install_rpath: '$ORIGIN/../lib64',
+         link_with: [libvlc, libvlccore],
+         include_directories: [vlc_include_dirs],
+         dependencies: vlc_deps,
+diff --git a/bin/vlc.c b/bin/vlc.c
+index 9bc5dc79ccd665f93d3c0a1c3e72e6c34b53a37e..dd6e81fb06ddf7ba09407821343a56140e696735 100644
+--- a/bin/vlc.c
++++ b/bin/vlc.c
+@@ -243,8 +243,8 @@ int main(int argc, const char *argv[])
+ 
+     int ret = 1;
+     libvlc_SetExitHandler(vlc->p_libvlc_int, vlc_kill, &self);
+-    libvlc_set_app_id (vlc, "org.VideoLAN.VLC", PACKAGE_VERSION, PACKAGE_NAME);
+-    libvlc_set_user_agent (vlc, "VLC media player", "VLC/"PACKAGE_VERSION);
++    libvlc_set_app_id (vlc, "org.VideoLAN.VLCNeon", PACKAGE_VERSION, "vlc-neon");
++    libvlc_set_user_agent (vlc, "VLC Neon", "VLC-Neon/"PACKAGE_VERSION);
+ 
+     if (libvlc_InternalAddIntf (vlc->p_libvlc_int, NULL))
+     {
+diff --git a/modules/control/dbus/dbus.c b/modules/control/dbus/dbus.c
+index 360b4aeb81eb05edfde617efe4124571710779a6..6cd44d0ae85366c6d1e5d098a8e4a33bb155eefb 100644
+--- a/modules/control/dbus/dbus.c
++++ b/modules/control/dbus/dbus.c
+@@ -70,7 +70,7 @@
+ #include <errno.h>
+ #include <unistd.h>
+ 
+-#define DBUS_MPRIS_BUS_NAME "org.mpris.MediaPlayer2.vlc"
++#define DBUS_MPRIS_BUS_NAME "org.mpris.MediaPlayer2.vlc_neon"
+ #define DBUS_INSTANCE_ID_PREFIX "instance"
+ 
+ #define SEEK_THRESHOLD 1000 /* µsec */
+diff --git a/modules/control/dbus/dbus_root.c b/modules/control/dbus/dbus_root.c
+index 07ad570dced04e37709c535c09b2aa4974115cc8..3d2e415e337b8242079993d3181462552a135224 100644
+--- a/modules/control/dbus/dbus_root.c
++++ b/modules/control/dbus/dbus_root.c
+@@ -75,7 +75,7 @@ static int
+ MarshalIdentity( intf_thread_t *p_intf, DBusMessageIter *container )
+ {
+     VLC_UNUSED( p_intf );
+-    const char *psz_id = _("VLC media player");
++    const char *psz_id = _("VLC Neon");
+ 
+     if (!dbus_message_iter_append_basic( container, DBUS_TYPE_STRING, &psz_id ))
+         return VLC_ENOMEM;
+@@ -158,7 +158,7 @@ static int
+ MarshalDesktopEntry( intf_thread_t *p_intf, DBusMessageIter *container )
+ {
+     VLC_UNUSED( p_intf );
+-    const char* psz_ret = PACKAGE;
++    const char* psz_ret = "org.VideoLAN.VLCNeon";
+ 
+     if (!dbus_message_iter_append_basic( container, DBUS_TYPE_STRING, &psz_ret ))
+         return VLC_ENOMEM;
+diff --git a/src/posix/dirs.c b/src/posix/dirs.c
+index d8ec536ac047196075cc8e690127b2488cdef1b4..c745f05ad537e044fb0ebe94780bfe6ebb8976b3 100644
+--- a/src/posix/dirs.c
++++ b/src/posix/dirs.c
+@@ -147,14 +147,14 @@ static char *config_GetAppDir (const char *xdg_name, const char *xdg_default)
+     const char *home = getenv (var);
+     if (home != NULL)
+     {
+-        if (asprintf (&psz_dir, "%s/vlc", home) == -1)
++        if (asprintf (&psz_dir, "%s/vlc-neon", home) == -1)
+             psz_dir = NULL;
+         return psz_dir;
+     }
+ 
+     char *psz_home = config_GetHomeDir ();
+     if( psz_home == NULL
+-     || asprintf( &psz_dir, "%s/%s/vlc", psz_home, xdg_default ) == -1 )
++     || asprintf( &psz_dir, "%s/%s/vlc-neon", psz_home, xdg_default ) == -1 )
+         psz_dir = NULL;
+     free (psz_home);
+     return psz_dir;

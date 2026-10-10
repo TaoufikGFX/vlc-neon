@@ -1,0 +1,4 @@
+FROM docker.io/library/ubuntu:24.04
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends xvfb libgl1-mesa-dri libegl1 libgl1 \
+      imagemagick python3 fuse libfuse2t64 file procps ca-certificates && rm -rf /var/lib/apt/lists/*

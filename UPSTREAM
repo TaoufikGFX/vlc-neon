@@ -1,0 +1,7 @@
+# Pinned upstream VLC source used by VLC Neon (read by scripts/fetch-upstream.sh)
+VLC_REPO=https://code.videolan.org/videolan/vlc.git
+VLC_MIRROR=https://github.com/videolan/vlc.git
+VLC_COMMIT=e77e49b5dff7484dbf70cd1540a6a568e1890280
+VLC_COMMIT_DATE=2026-10-02
+VLC_VERSION=4.0.0-dev
+NEON_VERSION=1.0.0

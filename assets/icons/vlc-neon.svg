@@ -1,0 +1,24 @@
+<!-- SPDX-License-Identifier: GPL-2.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+ <defs>
+  <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#17132c"/><stop offset="1" stop-color="#040916"/></linearGradient>
+  <linearGradient id="orange" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ffe37b"/><stop offset=".45" stop-color="#ff952f"/><stop offset="1" stop-color="#ff3766"/></linearGradient>
+  <linearGradient id="cyan" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#a9fff6"/><stop offset=".4" stop-color="#48efec"/><stop offset="1" stop-color="#4796ff"/></linearGradient>
+  <linearGradient id="shade" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#502431"/><stop offset="1" stop-color="#151629"/></linearGradient>
+ </defs>
+ <rect x="10" y="10" width="236" height="236" rx="55" fill="url(#bg)"/>
+ <rect x="12" y="12" width="232" height="232" rx="53" fill="none" stroke="#8e58ff" stroke-width="2" opacity=".32"/>
+ <ellipse cx="128" cy="205" rx="95" ry="24" fill="none" stroke="#16d8f0" stroke-width="15" opacity=".06"/>
+ <ellipse cx="128" cy="205" rx="86" ry="18" fill="none" stroke="#16d8f0" stroke-width="8" opacity=".14"/>
+ <ellipse cx="128" cy="205" rx="77" ry="12" fill="none" stroke="url(#cyan)" stroke-width="2" opacity=".8"/>
+ <path d="M128 32 53 193Q128 229 203 193Z" fill="none" stroke="#ff763c" stroke-width="22" stroke-linejoin="round" opacity=".05"/>
+ <path d="M128 32 53 193Q128 229 203 193Z" fill="none" stroke="#ff763c" stroke-width="12" stroke-linejoin="round" opacity=".14"/>
+ <path d="M48 192 128 169 208 192 208 211 128 230 48 211Z" fill="#17152a" stroke="url(#orange)" stroke-width="4" stroke-linejoin="round"/>
+ <path d="M128 32 53 193Q128 222 203 193Z" fill="url(#shade)" stroke="url(#orange)" stroke-width="5" stroke-linejoin="round"/>
+ <path d="M108 77Q128 84 148 77L165 113Q128 131 91 113Z" fill="url(#cyan)"/>
+ <path d="M78 142Q128 165 178 142L194 178Q128 209 62 178Z" fill="url(#cyan)"/>
+ <path d="M123 43 66 183" fill="none" stroke="#fff1b1" stroke-width="2" stroke-linecap="round" opacity=".75"/>
+ <path d="M55 199 127 217 199 199" fill="none" stroke="url(#orange)" stroke-width="2" opacity=".9"/>
+ <circle cx="195" cy="56" r="3" fill="#70ffff"/>
+ <path d="M202 40V47M198.5 43.5H205.5" stroke="#61e6ff" stroke-width="1.5" stroke-linecap="round" opacity=".8"/>
+</svg>

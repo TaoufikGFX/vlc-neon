@@ -1,0 +1,3 @@
+FROM registry.fedoraproject.org/fedora:44
+RUN dnf -y install xorg-x11-server-Xvfb mesa-dri-drivers mesa-libEGL mesa-libGL ImageMagick python3 \
+      fuse fuse-libs file procps-ng && dnf clean all

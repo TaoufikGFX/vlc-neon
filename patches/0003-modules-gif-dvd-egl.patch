@@ -1,0 +1,297 @@
+From: Taoufik Mouadab <27153304+TaoufikGFX@users.noreply.github.com>
+Subject: [PATCH 0003] Modules: animated GIF playback, silent disc probing, Wayland EGL fixes
+
+- Animated GIFs go to avformat (play and loop); still GIFs stay on the image demuxer
+- dvdread no longer shows an error dialog when probing regular files
+- EGL/Wayland: work without EGL_KHR_display_reference, swap interval 0,
+  opt-in device diagnostics; SHM output respects a provider-owned viewport
+
+Applies on top of VLC upstream commit e77e49b5dff7484dbf70cd1540a6a568e1890280.
+SPDX-License-Identifier: GPL-2.0-or-later
+---
+ modules/access/dvdread.c           | 46 +++++++++++++++++++++++++++++++----
+ modules/demux/image.c              | 28 ++++++++++++++++++++++
+ modules/video_output/opengl/egl.c  | 75 +++++++++++++++++++++++++++++++++++++++-------------------
+ modules/video_output/wayland/shm.c |  2 +-
+ 4 files changed, 122 insertions(+), 29 deletions(-)
+
+diff --git a/modules/access/dvdread.c b/modules/access/dvdread.c
+index bbc010dd3b8b82e0e888fb4924db107fd26a86e3..bfda968ff4716b1f04ff87bc6800f292c0d02c96 100644
+--- a/modules/access/dvdread.c
++++ b/modules/access/dvdread.c
+@@ -41,6 +41,10 @@
+ #include "dvdread.h"
+ 
+ #include <vlc_dialog.h>
++#include <vlc_fs.h>
++#include <sys/stat.h>
++#include <string.h>
++#include <strings.h>
+ #include <vlc_iso_lang.h>
+ #include <limits.h>
+ #include <vlc_plugin.h>
+@@ -108,6 +112,25 @@ static void DvdReadLog( void *foo, dvd_logger_level_t i, const char *p, va_list
+     msg_GenericVa( p_demux, i, p, z );
+ }
+ #endif
++/* Probing: demux modules are tried on every file, not only on discs. A regular file that is clearly not a disc image (a GIF, an
++ * mp4, ...) failing here is the normal outcome of the probe, so it must not raise a user-visible error. */
++static bool LooksLikeDiscSource( const char *psz_path )
++{
++    struct stat st;
++    if( vlc_stat( psz_path, &st ) != 0 )
++        return true;                    /* not a local path (device name, URL...): keep reporting */
++    if( !S_ISREG( st.st_mode ) )
++        return true;                    /* directory (VIDEO_TS), block/char device */
++    const char *ext = strrchr( psz_path, '.' );
++    if( ext == NULL )
++        return false;
++    static const char *const images[] = { ".iso", ".img", ".bin", ".nrg", ".mdf", ".udf", ".dvd", ".toc", ".cue" };
++    for( size_t i = 0; i < ARRAY_SIZE(images); i++ )
++        if( !strcasecmp( ext, images[i] ) )
++            return true;
++    return false;
++}
++
+ /*****************************************************************************
+  * Open:
+  *****************************************************************************/
+@@ -140,6 +163,15 @@ int OpenCommonDvdread( vlc_object_t *p_this , dvd_type_t type,
+     if( unlikely(psz_file == NULL) )
+         return VLC_EGENERIC;
+ 
++    /* Probed on every file: leave regular files that are not disc images (gif, mp4, ...) to the other demuxers, without
++     * touching libdvdread (its log would show up as errors) and without any user-visible message */
++    if( !p_demux->obj.force && !LooksLikeDiscSource( psz_file ) )
++    {
++        msg_Dbg( p_demux, "%s is not a disc or disc image", psz_file );
++        free( psz_file );
++        return VLC_EGENERIC;
++    }
++
+ #ifdef __APPLE__
+     if( DiscProbeMacOSPermission( p_this, psz_file ) != VLC_SUCCESS )
+     {
+@@ -200,9 +232,14 @@ int OpenCommonDvdread( vlc_object_t *p_this , dvd_type_t type,
+ #endif
+     if( p_dvdread == NULL )
+     {
+-        msg_Err( p_demux, "DVDRead cannot open source: %s", psz_file );
+-        vlc_dialog_display_error( p_demux, _("Playback failure"),
+-                      _("DVDRead could not open the disc \"%s\"."), psz_file );
++        if( LooksLikeDiscSource( psz_file ) )
++        {
++            msg_Err( p_demux, "DVDRead cannot open source: %s", psz_file );
++            vlc_dialog_display_error( p_demux, _("Playback failure"),
++                          _("DVDRead could not open the disc \"%s\"."), psz_file );
++        }
++        else
++            msg_Dbg( p_demux, "DVDRead cannot open %s: not a disc, leaving it to other demuxers", psz_file );
+ 
+         free( psz_file );
+         return VLC_EGENERIC;
+@@ -215,7 +252,8 @@ int OpenCommonDvdread( vlc_object_t *p_this , dvd_type_t type,
+         char rgsz_volid[32];
+         if( DVDUDFVolumeInfo( p_dvdread, rgsz_volid, 32, NULL, 0 ) )
+         {
+-            if( DVDISOVolumeInfo( p_dvdread, rgsz_volid, 32, NULL, 0 ) == 0 )
++            if( DVDISOVolumeInfo( p_dvdread, rgsz_volid, 32, NULL, 0 ) == 0
++             && LooksLikeDiscSource( p_demux->psz_filepath ? p_demux->psz_filepath : "" ) )
+             {
+                 vlc_dialog_display_error( p_demux, _("Playback failure"),
+                               _("Cannot play a non-UDF mastered DVD." ) );
+diff --git a/modules/demux/image.c b/modules/demux/image.c
+index d821be9989521acd8e01198c8ad7fb219b6d87d2..11c70e32e721035af1305b12572bd7027930b9f1 100644
+--- a/modules/demux/image.c
++++ b/modules/demux/image.c
+@@ -744,6 +744,29 @@ static int parse_farbfeld_header(vlc_object_t *object, es_format_t *fmt)
+     return VLC_SUCCESS;
+ }
+ 
++/* A GIF with several frames is an animation: the image demuxer only shows its first frame, so such files are left to avformat,
++ * which plays every frame with its own delay. Static GIFs stay here. Encoders such as ffmpeg write the NETSCAPE looping
++ * extension even for one frame, so it only counts when the first frame is too large to see a second one in the peeked data. */
++static bool IsAnimatedGif(stream_t *s)
++{
++    const size_t peek_size = 256 * 1024;
++    const uint8_t *p;
++    ssize_t size = vlc_stream_Peek(s, &p, peek_size);
++    if (size < 13)
++        return false;
++    int graphic_controls = 0;
++    bool looping = false;
++    for (ssize_t i = 13; i + 3 <= size; i++) {
++        if (p[i] != 0x21)
++            continue;
++        if (p[i + 1] == 0xF9 && p[i + 2] == 0x04 && ++graphic_controls >= 2)
++            return true;
++        if (p[i + 1] == 0xFF && p[i + 2] == 0x0B && i + 14 <= size && memcmp(&p[i + 3], "NETSCAPE2.0", 11) == 0)
++            looping = true;
++    }
++    return looping && (size_t)size == peek_size;
++}
++
+ static int Open(vlc_object_t *object)
+ {
+     demux_t *demux = (demux_t*)object;
+@@ -759,6 +782,11 @@ static int Open(vlc_object_t *object)
+     if (codec == VLC_CODEC_MXPEG)
+         return VLC_EGENERIC; //let avformat demux this file
+ 
++    if (codec == VLC_CODEC_GIF && IsAnimatedGif(demux->s)) {
++        msg_Dbg(demux, "animated GIF: leaving it to avformat");
++        return VLC_EGENERIC;
++    }
++
+     /* Load and if selected decode */
+     es_format_t fmt;
+     es_format_Init(&fmt, VIDEO_ES, codec);
+diff --git a/modules/video_output/opengl/egl.c b/modules/video_output/opengl/egl.c
+index eda10f43e4a5cf09219a9266dd99b548e8ee17c0..6e5f01875c244969d7470c9f7e856def184574b4 100644
+--- a/modules/video_output/opengl/egl.c
++++ b/modules/video_output/opengl/egl.c
+@@ -74,6 +74,8 @@ typedef struct vlc_gl_sys_t
+     struct wl_egl_window *window;
+ #endif
+     bool is_current;
++    bool terminate_display;
++    bool interval_set;
+ } vlc_gl_sys_t;
+ 
+ static bool CheckAPI(EGLDisplay dpy, const char *api)
+@@ -171,6 +173,31 @@ struct gl_api
+    EGLint     attr[3];
+ };
+ 
++/* Wayland: do not let eglSwapBuffers() wait for the compositor's frame callbacks (swap interval 0).
++ *
++ * With the default interval 1, Mesa makes each swap wait for the callback of the previous one. A compositor sends those
++ * only while the surface is visible: when the window hosting the video is minimized (or not yet mapped) the vout thread
++ * blocks inside eglSwapBuffers() until the window is shown again, playback stalls and quitting hangs (the player waits
++ * for the vout thread). The block happens in the swap that is already in flight, so the interval can not be switched
++ * back and forth when the window gets hidden: it has to stay at 0.
++ * There is no tearing on Wayland (the compositor always presents complete frames), and VLC only renders when a picture
++ * is due, so nothing renders faster than the video. VLC_NEON_EGL_KEEP_THROTTLE=1 restores the default. */
++static void DisableSwapThrottling(vlc_gl_t *gl)
++{
++    vlc_gl_sys_t *sys = gl->sys;
++
++    if (sys->interval_set || gl->surface->type != VLC_WINDOW_TYPE_WAYLAND)
++        return;
++    sys->interval_set = true;
++    if (getenv("VLC_NEON_EGL_KEEP_THROTTLE") != NULL)
++    {
++        msg_Dbg(gl, "Wayland swap interval left at the default (VLC_NEON_EGL_KEEP_THROTTLE)");
++        return;
++    }
++    eglSwapInterval(sys->display, 0);
++    msg_Dbg(gl, "Wayland swap interval set to 0 (no frame-callback throttling)");
++}
++
+ static int MakeCurrent (vlc_gl_t *gl)
+ {
+     vlc_gl_sys_t *sys = gl->sys;
+@@ -179,6 +206,7 @@ static int MakeCurrent (vlc_gl_t *gl)
+                         sys->context) != EGL_TRUE)
+         return VLC_EGENERIC;
+     sys->is_current = true;
++    DisableSwapThrottling(gl);
+     return VLC_SUCCESS;
+ }
+ 
+@@ -245,29 +273,21 @@ static EGLDisplay OpenDisplay(vlc_gl_t *gl)
+ 
+     if (surface->type != VLC_WINDOW_TYPE_WAYLAND)
+         return EGL_NO_DISPLAY;
+-    if (!CheckClientExt("EGL_KHR_display_reference")) {
+-        msg_Warn(gl, "EGL display reference counting not supported");
+-        return EGL_NO_DISPLAY;
+-    }
+-
++    vlc_gl_sys_t *sys = gl->sys;
++    const bool tracked = CheckClientExt("EGL_KHR_display_reference");
++    // Qt shares the native display. Without EGL reference counting, terminating
++    // it would invalidate Qt's contexts. Retain that borrowed display until exit.
++    sys->terminate_display = tracked;
++    EGLAttrib attrs[] = { EGL_NONE, EGL_NONE, EGL_NONE };
+ # ifdef EGL_KHR_display_reference
+-    static const EGLAttrib attrs[] = {
+-        EGL_TRACK_REFERENCES_KHR, EGL_TRUE,
+-        EGL_NONE
+-    };
+-
+-#  if defined(EGL_VERSION_1_5)
+-#   ifdef EGL_KHR_platform_wayland
+-    if (CheckClientExt("EGL_KHR_platform_wayland"))
+-        return eglGetPlatformDisplay(EGL_PLATFORM_WAYLAND_KHR,
+-                                     surface->display.wl, attrs);
+-#   endif
+-
+-#  elif defined(EGL_EXT_platform_wayland)
+-    if (CheckClientExt("EGL_EXT_platform_wayland"))
+-        return getPlatformDisplayEXT(EGL_PLATFORM_WAYLAND_EXT,
+-                                     surface->display.wl, attrs);
+-#  endif
++    if (tracked) {
++        attrs[0] = EGL_TRACK_REFERENCES_KHR;
++        attrs[1] = EGL_TRUE;
++    }
++# endif
++# if defined(EGL_VERSION_1_5) && defined(EGL_KHR_platform_wayland)
++    if (CheckClientExt("EGL_KHR_platform_wayland") || CheckClientExt("EGL_EXT_platform_wayland"))
++        return eglGetPlatformDisplay(EGL_PLATFORM_WAYLAND_KHR, surface->display.wl, attrs);
+ # endif
+     return EGL_NO_DISPLAY;
+ }
+@@ -667,6 +687,7 @@ static void SwapBuffers (vlc_gl_t *gl)
+         EGLContext previous_context = eglGetCurrentContext();
+ 
+         eglMakeCurrent(sys->display, sys->surface, sys->surface, sys->context);
++        DisableSwapThrottling(gl);
+         eglSwapBuffers (sys->display, sys->surface);
+         if (previous_display != EGL_NO_DISPLAY)
+             eglMakeCurrent(previous_display, s_draw, s_read, previous_context);
+@@ -693,7 +714,7 @@ static void Close(vlc_gl_t *gl)
+         eglDestroySurface(sys->display, sys->surface);
+         DestroySurface(gl);
+     }
+-    eglTerminate(sys->display);
++    if (sys->terminate_display) eglTerminate(sys->display);
+     ReleaseDisplay(gl);
+     free (sys);
+ }
+@@ -739,6 +760,8 @@ static int Open(vlc_gl_t *gl, const struct gl_api *api,
+     sys->surface = EGL_NO_SURFACE;
+     sys->context = EGL_NO_CONTEXT;
+     sys->is_current = false;
++    sys->interval_set = false;
++    sys->terminate_display = true;
+ 
+     sys->display = OpenDisplay(gl);
+     if (sys->display == EGL_NO_DISPLAY) {
+@@ -770,7 +793,11 @@ static int Open(vlc_gl_t *gl, const struct gl_api *api,
+ 
+     if (has_device_query && has_device_enum)
+     {
+-        DisplayAvailableDevices(gl);
++        /* Diagnostic enumeration touches every installed GPU driver. It is not
++         * needed to render on the selected display, and can hang on an unused
++         * device whose kernel driver is unhealthy. Keep it explicitly opt-in. */
++        if (getenv("VLC_NEON_EGL_DIAGNOSTICS") != NULL)
++            DisplayAvailableDevices(gl);
+         PFNEGLQUERYDISPLAYATTRIBEXTPROC eglQueryDisplayAttribEXT =
+             (PFNEGLQUERYDISPLAYATTRIBEXTPROC)eglGetProcAddress("eglQueryDisplayAttribEXT");
+         PFNEGLQUERYDEVICESTRINGEXTPROC eglQueryDeviceStringEXT =
+diff --git a/modules/video_output/wayland/shm.c b/modules/video_output/wayland/shm.c
+index 48a5b96ba333d8c3d47e9b4655f37f0a0de8c175..7c1a0a899c0fade4b512c2b892395a48097120f5 100644
+--- a/modules/video_output/wayland/shm.c
++++ b/modules/video_output/wayland/shm.c
+@@ -309,7 +309,7 @@ static int Open(vout_display_t *vd,
+     wl_display_roundtrip_queue(display, sys->eventq);
+ 
+     struct wl_surface *surface = sys->embed->handle.wl;
+-    if (sys->viewporter != NULL)
++    if (sys->viewporter != NULL && !sys->embed->info.has_wayland_viewport)
+         sys->viewport = wp_viewporter_get_viewport(sys->viewporter, surface);
+     else
+         sys->viewport = NULL;

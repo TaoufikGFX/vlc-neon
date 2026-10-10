@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# VLC Neon AppImage entry point
+set -e
+here=$(dirname -- "$(readlink -f -- "$0")")
+export APPDIR=${APPDIR:-$here}
+prefix="$APPDIR/opt/vlc-neon"
+# Bundled Qt (plugins, QML modules) and libraries
+export QT_PLUGIN_PATH="$APPDIR/usr/plugins"
+export QML_IMPORT_PATH="$APPDIR/usr/qml"
+export QML2_IMPORT_PATH="$APPDIR/usr/qml"
+# VLC's own plugins and data
+export VLC_PLUGIN_PATH="$prefix/lib64/vlc/plugins"
+export VLC_LIB_PATH="$prefix/lib64/vlc"
+export VLC_LIBEXEC_PATH="$prefix/libexec/vlc"
+export VLC_DATA_PATH="$prefix/share/vlc"
+export LD_LIBRARY_PATH="$prefix/lib64:$prefix/lib64/vlc:$APPDIR/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+exec "$prefix/bin/vlc-neon" "$@"
