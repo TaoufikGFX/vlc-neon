@@ -151,6 +151,7 @@ cd vlc-neon
 - **Separate-window Picture-in-Picture is Wayland only.** On X11 the player switches to a compact single-window PiP.
 - **Wayland decides window size and position.** Requests such as the compact player size or the PiP corner can be ignored by the compositor (use the KWin script above on Plasma).
 - **The RPM is built for Fedora 44 with Qt 6.11.** The interface uses Qt private APIs, so the package requires Qt 6.11.x; when Fedora moves to Qt 6.12, install a newer VLC Neon release (or use the AppImage/Flatpak).
+- **Flatpak: VLC's media-details helper does not start** (`vlc-preparser` cannot find `libvlc.so.12`), so reading details such as duration and title through it fails; playback is not affected. The RPM and AppImage are fine. Tracked in [#1](https://github.com/TaoufikGFX/vlc-neon/issues/1).
 - **Development base.** VLC Neon is built on VLC 4.0.0-dev; media library, Chromecast/UPnP discovery, skins2 and translations are disabled in these builds.
 - **Unofficial build.** Please report problems [here](https://github.com/TaoufikGFX/vlc-neon/issues), not to VideoLAN.
 
